@@ -473,8 +473,8 @@ def draw_matches(img1, img2, kp1, kp2, matches, figsize=(15, 8), show_lines=True
     plt.show()
 
 if __name__ == '__main__':
-    image1 = cv.imread('4.jpg')
-    image2 = cv.imread('5.jpg')
+    image1 = cv.imread('box.png')
+    image2 = cv.imread('box_in_scene.png')
 
     keypoints1, descriptors1 = detect_and_compute(image1)
     keypoints2, descriptors2 = detect_and_compute(image2)
