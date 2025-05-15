@@ -1,7 +1,6 @@
 import numpy as np
 import cv2 as cv
 from scipy.ndimage import maximum_filter, minimum_filter
-import time
 from matplotlib import pyplot as plt
 
 init_sigma = 0.5 # 假设初始图片自带的高斯模糊标准差
@@ -342,18 +341,10 @@ def detect_and_compute(image, n_octaves=-1):
     if n_octaves == -1:
         min_dim = min(image.shape)
         n_octaves = round(np.log2(min_dim)) - 1
-    begin = time.time()
     gaussian_pyramid, dog_pyramid = build_pyramid(image, n_octaves)
-    print("构建金字塔用时:", time.time() - begin)
-    begin = time.time()
     keypoints = find_keypoints(dog_pyramid)
-    print("特征点检测用时:", time.time() - begin)
-    begin = time.time()
     keypoints = orientation_assignment(keypoints, gaussian_pyramid)
-    print("方向分配用时:", time.time() - begin)
-    begin = time.time()
     descriptors = generate_descriptor(keypoints, gaussian_pyramid)
-    print("生成描述子用时:", time.time() - begin)
 
     return keypoints, descriptors
 
@@ -403,7 +394,8 @@ def show_pyramid(pyramid):
             cv.destroyAllWindows()
 
 
-def draw_keypoints(image, keypoints):
+def draw_keypoints(img, keypoints):
+    image = img.copy()
     for kp in keypoints:
         # 坐标转换到原图
         scale = 2 / (2 ** kp["octave"])
@@ -482,7 +474,7 @@ if __name__ == '__main__':
     img1 = draw_keypoints(image1, keypoints1)
     img2 = draw_keypoints(image2, keypoints2)
     print("匹配数量:", len(matches))
-    draw_matches(img1, img2, keypoints1, keypoints2, matches)
+    draw_matches(image1, image2, keypoints1, keypoints2, matches)
 
     cv.imshow("SIFT Keypoints1", img1)
     cv.imshow("SIFT Keypoints2", img2)
