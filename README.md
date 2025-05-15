@@ -7,4 +7,10 @@
 4. 描述子生成
 5. 特征匹配
 
+需要下面的库
+numpy
+opencv-python
+scipy
+matplotlib
+
 不懂的直接问我QQ693737754
