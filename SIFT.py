@@ -80,9 +80,52 @@ def find_keypoints(dog_pyramid):
             final_mask = extrema_mask & edge_mask
             ys, xs = np.where(final_mask)
 
+            # 亚像素插值
             for x, y in zip(xs, ys):
-                # 亚像素插值
-                abandon, x, y, l, bx, by, bl = subpixel_interpolation(octave, layer, x, y, height, width, max_interp_steps, img_border)
+                abandon = False
+                l = layer
+                bx, by, bl = 0, 0, 0
+                for i in range(max_interp_steps + 1):
+                    """
+                    在点X0=(x,y,σ)附近泰勒展开 D(X) ≈ D + ∇DTX + XTHX/2 （这里的X实际上是相对于当前点X0的偏移量）
+                    对X求导，令 dD(X)/dX = ∇D + HX = 0 ⇒ X = -H^{-1}∇D
+                    """
+                    prev = octave[l - 1]
+                    curr = octave[l]
+                    next = octave[l + 1]
+                    dx = (curr[y, x + 1] - curr[y, x - 1]) / 2
+                    dy = (curr[y + 1, x] - curr[y - 1, x]) / 2
+                    ds = (next[y, x] - prev[y, x]) / 2
+                    dxx = curr[y, x + 1] + curr[y, x - 1] - 2 * curr[y, x]
+                    dyy = curr[y + 1, x] + curr[y - 1, x] - 2 * curr[y, x]
+                    dss = next[y, x] + prev[y, x] - 2 * curr[y, x]
+                    dxy = (curr[y + 1, x + 1] - curr[y + 1, x - 1] - curr[y - 1, x + 1] + curr[y - 1, x - 1]) / 4.0
+                    dxs = (next[y, x + 1] - next[y, x - 1] - prev[y, x + 1] + prev[y, x - 1]) / 4.0
+                    dys = (next[y + 1, x] - next[y - 1, x] - prev[y + 1, x] + prev[y - 1, x]) / 4.0
+                    H = np.array([[dxx, dxy, dxs], [dxy, dyy, dys], [dxs, dys, dss]])
+                    dD = np.array([dx, dy, ds])
+                    if np.abs(np.linalg.det(H)) < 1e-10:
+                        abandon = True
+                        break
+                    else:
+                        bx, by, bl = -np.linalg.solve(H, dD)
+                    if np.abs(bx) <= 0.5 and np.abs(by) <= 0.5 and np.abs(
+                            bl) <= 0.5:  # 收敛条件（注意这里已经小于0.5，所以四舍五入会变为0，不需要加）
+                        break
+                    if abs(bx) > 1e6 or abs(by) > 1e6 or abs(bl) > 1e6:  # 防止溢出
+                        abandon = True
+                        break
+                    x += round(bx)
+                    y += round(by)
+                    l += round(bl)
+                    if (l < 1 or l >= len(octave) - 1) or (
+                            x < img_border or x >= width - img_border) or (
+                            y < img_border or y >= height - img_border):
+                        abandon = True
+                        break
+                    if i == max_interp_steps:  # 达到最大插值次数还没收敛，放弃该点
+                        abandon = True
+                        break
                 if abandon:
                     continue
 
@@ -114,51 +157,6 @@ def find_keypoints(dog_pyramid):
                 })
     return keypoints
 
-def subpixel_interpolation(octave, l, x, y, height, width, max_interp_steps, img_border):
-    abandon = False
-    bx, by, bl = 0, 0, 0
-    for i in range(max_interp_steps + 1):
-        """
-        在点X0=(x,y,σ)附近泰勒展开 D(X) ≈ D + ∇DTX + XTHX/2 （这里的X实际上是相对于当前点X0的偏移量）
-        对X求导，令 dD(X)/dX = ∇D + HX = 0 ⇒ X = -H^{-1}∇D
-        """
-        prev = octave[l - 1]
-        curr = octave[l]
-        next = octave[l + 1]
-        dx = (curr[y, x + 1] - curr[y, x - 1]) / 2
-        dy = (curr[y + 1, x] - curr[y - 1, x]) / 2
-        ds = (next[y, x] - prev[y, x]) / 2
-        dxx = curr[y, x + 1] + curr[y, x - 1] - 2 * curr[y, x]
-        dyy = curr[y + 1, x] + curr[y - 1, x] - 2 * curr[y, x]
-        dss = next[y, x] + prev[y, x] - 2 * curr[y, x]
-        dxy = (curr[y + 1, x + 1] - curr[y + 1, x - 1] - curr[y - 1, x + 1] + curr[y - 1, x - 1]) / 4.0
-        dxs = (next[y, x + 1] - next[y, x - 1] - prev[y, x + 1] + prev[y, x - 1]) / 4.0
-        dys = (next[y + 1, x] - next[y - 1, x] - prev[y + 1, x] + prev[y - 1, x]) / 4.0
-        H = np.array([[dxx, dxy, dxs], [dxy, dyy, dys], [dxs, dys, dss]])
-        dD = np.array([dx, dy, ds])
-        if np.abs(np.linalg.det(H)) < 1e-10:
-            abandon = True
-            break
-        else:
-            bx, by, bl = -np.linalg.solve(H, dD)
-        if np.abs(bx) <= 0.5 and np.abs(by) <= 0.5 and np.abs(bl) <= 0.5:  # 收敛条件（注意这里已经小于0.5，所以四舍五入会变为0，不需要加）
-            break
-        if abs(bx) > 1e6 or abs(by) > 1e6 or abs(bl) > 1e6:  # 防止溢出
-            abandon = True
-            break
-        x += round(bx)
-        y += round(by)
-        l += round(bl)
-        if (l < 1 or l >= len(octave) - 1) or (
-                x < img_border or x >= width - img_border) or (
-                y < img_border or y >= height - img_border):
-            abandon = True
-            break
-        if i == max_interp_steps:  # 达到最大插值次数还没收敛，放弃该点
-            abandon = True
-            break
-
-    return abandon, x, y, l, bx, by, bl
 
 # 方向分配
 def orientation_assignment(keypoints, gaussian_pyramid):
